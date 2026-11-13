@@ -18,7 +18,8 @@ import {
   FileText,
   Sparkles,
   Loader2,
-  Key
+  Key,
+  GraduationCap
 } from "lucide-react";
 import CollegeSearchAutocomplete from "@/components/CollegeSearchAutocomplete";
 import { startCrawlJob, fetchCrawlStatus, resolveCollegeUrl, CrawlJobStatus, CollegeSuggestion } from "@/lib/api";
@@ -375,21 +376,171 @@ function ScannerContent() {
             </div>
           )}
 
-          {/* Action When Completed */}
+          {/* Action & Extracted Data Display When Completed */}
           {jobStatus.status === "COMPLETED" && (
-            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                <span className="text-sm font-bold text-emerald-900">
-                  Crawl & Extraction Completed! Verified facts added to database.
-                </span>
+            <div className="space-y-6 pt-2 animate-in fade-in duration-300">
+              {/* Success Banner with Direct University Profile Button */}
+              <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-xl bg-emerald-600 text-white shadow-sm mt-0.5">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-extrabold text-slate-900">
+                      {jobStatus.university_name || "Extraction Pipeline Completed!"}
+                    </h4>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Successfully crawled {jobStatus.pages_crawled} pages and extracted {jobStatus.records_extracted} verified educational facts into database.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {jobStatus.university_id ? (
+                    <Link
+                      href={`/colleges/${jobStatus.university_id}`}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md hover:shadow-lg transition active:scale-95"
+                    >
+                      <span>View University Profile</span>
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  ) : (
+                    <Link
+                      href="/search"
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 transition"
+                    >
+                      <span>Find in Directory</span>
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  )}
+                  {jobStatus.university_id && (
+                    <Link
+                      href={`/compare?id=${jobStatus.university_id}`}
+                      className="px-3 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-xs transition"
+                    >
+                      Compare
+                    </Link>
+                  )}
+                </div>
               </div>
-              <Link
-                href="/search"
-                className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 transition"
-              >
-                View in Directory
-              </Link>
+
+              {/* Extracted Structured Intelligence Summary */}
+              {jobStatus.extracted_summary && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <FileCheck className="h-4 w-4 text-emerald-600" />
+                      <span>Extracted Data & Institutional Fact Audit</span>
+                    </h4>
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                      Completeness: {jobStatus.extracted_summary.data_completeness_score}%
+                    </span>
+                  </div>
+
+                  {/* Summary Category Pills */}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="text-lg font-bold text-slate-900">
+                        {jobStatus.extracted_summary.programs_count}
+                      </div>
+                      <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
+                        Programs / Degrees
+                      </div>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="text-lg font-bold text-slate-900">
+                        {jobStatus.extracted_summary.admissions_count}
+                      </div>
+                      <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
+                        Admissions
+                      </div>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="text-lg font-bold text-slate-900">
+                        {jobStatus.extracted_summary.placements_count}
+                      </div>
+                      <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
+                        Placements
+                      </div>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="text-lg font-bold text-slate-900">
+                        {jobStatus.extracted_summary.scholarships_count}
+                      </div>
+                      <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
+                        Scholarships
+                      </div>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="text-lg font-bold text-slate-900">
+                        {jobStatus.extracted_summary.faculty_count}
+                      </div>
+                      <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
+                        Faculty Members
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Recent Extracted Facts Preview Table */}
+                  {jobStatus.extracted_summary.recent_records && jobStatus.extracted_summary.recent_records.length > 0 && (
+                    <div className="overflow-hidden rounded-2xl border border-slate-200">
+                      <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-700 flex items-center justify-between">
+                        <span>Extracted Facts with Source Traceability</span>
+                        <span className="text-[11px] font-normal text-slate-500">Live Database Audit</span>
+                      </div>
+                      <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto bg-white text-xs">
+                        {jobStatus.extracted_summary.recent_records.map((rec, i) => (
+                          <div key={i} className="p-3 flex items-start justify-between gap-3 hover:bg-slate-50/70 transition">
+                            <div className="space-y-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700">
+                                  {rec.category}
+                                </span>
+                                <span className="font-semibold text-slate-800">
+                                  {rec.field_name.replace(/_/g, " ")}:
+                                </span>
+                                <span className="text-slate-900 font-medium truncate">
+                                  {rec.extracted_value}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                                <span>Source:</span>
+                                <a
+                                  href={rec.source_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:underline truncate max-w-xs inline-flex items-center gap-0.5"
+                                >
+                                  <span>{rec.source_url}</span>
+                                  <ExternalLink className="h-2.5 w-2.5" />
+                                </a>
+                              </div>
+                            </div>
+
+                            <span className="flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              {rec.verification_status} ({Math.round(rec.confidence_score * 100)}%)
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bottom Profile CTA */}
+                  {jobStatus.university_id && (
+                    <div className="pt-2 text-center">
+                      <Link
+                        href={`/colleges/${jobStatus.university_id}`}
+                        className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-sm shadow-md hover:from-blue-700 hover:to-indigo-700 transition"
+                      >
+                        <GraduationCap className="h-4 w-4" />
+                        <span>Open Full Institutional Dossier for {jobStatus.university_name || "this College"}</span>
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

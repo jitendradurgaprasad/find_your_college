@@ -51,6 +51,30 @@ export interface UniversityProfile extends UniversitySummary {
   traceable_facts: TraceableFact[];
 }
 
+export interface ExtractedFactPreview {
+  category: string;
+  field_name: string;
+  extracted_value: string;
+  source_url: string;
+  confidence_score: number;
+  verification_status: string;
+}
+
+export interface ExtractedSummary {
+  university_id: string;
+  university_name: string;
+  city?: string;
+  state?: string;
+  official_website?: string;
+  data_completeness_score: number;
+  admissions_count: number;
+  programs_count: number;
+  scholarships_count: number;
+  faculty_count: number;
+  placements_count: number;
+  recent_records: ExtractedFactPreview[];
+}
+
 export interface CrawlJobStatus {
   job_id: string;
   seed_url: string;
@@ -66,6 +90,9 @@ export interface CrawlJobStatus {
   end_time?: string;
   duration_seconds?: number;
   university_id?: string;
+  university_name?: string;
+  university_slug?: string;
+  extracted_summary?: ExtractedSummary;
   error_details?: string;
   logs: { level: string; message: string; timestamp: string }[];
 }

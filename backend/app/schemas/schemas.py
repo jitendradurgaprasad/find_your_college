@@ -226,6 +226,9 @@ class CrawlJobStatus(BaseModel):
     end_time: Optional[datetime] = None
     duration_seconds: Optional[float] = None
     university_id: Optional[str] = None
+    university_name: Optional[str] = None
+    university_slug: Optional[str] = None
+    extracted_summary: Optional[Dict[str, Any]] = None
     error_details: Optional[str] = None
     logs: List[CrawlLogSchema] = []
     model_config = {"from_attributes": True}
