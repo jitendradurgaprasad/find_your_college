@@ -10,7 +10,9 @@
 [![Tests: 18 Passed](https://img.shields.io/badge/Tests-18%20Passed%20(100%25)-success)](https://pytest.org/)
 
 **Tagline:** *Discover colleges. Explore opportunities. Make informed decisions.*  
-**Repository:** [https://github.com/jitendradurgaprasad/find_your_college.git](https://github.com/jitendradurgaprasad/find_your_college.git)
+**Repository:** [https://github.com/jitendradurgaprasad/find_your_college.git](https://github.com/jitendradurgaprasad/find_your_college.git)  
+**Backend API (Render):** [https://find-your-college.onrender.com](https://find-your-college.onrender.com) (Operational)  
+**Database (Supabase):** PostgreSQL Managed Instance (Operational)
 
 ---
 
