@@ -494,7 +494,7 @@ def seed_database():
             entrance_exams="BITSAT (BITS Admission Test)",
             eligibility_summary="Aggregate 75% in PCM/PCB in Class 12 with at least 60% in each subject.",
             selection_process="Computer based BITSAT session 1 and session 2 score allocation.",
-            application_fee="₹3,400 (for male candidates for one session) / ₹2,900 (for female candidates)",
+            application_fee="₹3,400 (Male) / ₹2,900 (Female)",
             application_portal_url="https://www.bitsadmission.com",
             source_url="https://www.bitsadmission.com/bitsatmain.aspx",
             source_evidence="Official admission portal notice: 'BITSAT-2025 online application window is currently active'.",

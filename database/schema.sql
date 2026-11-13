@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS admissions (
     entrance_exams TEXT,                              -- JEE Main, GATE, CAT, CET, institutional
     eligibility_summary TEXT,
     selection_process TEXT,
-    application_fee VARCHAR(64),
+    application_fee VARCHAR(255),
     application_portal_url VARCHAR(512),
     counselling_info TEXT,
     contact_email VARCHAR(255),
@@ -176,9 +176,9 @@ CREATE TABLE IF NOT EXISTS placements (
     university_id VARCHAR(64) NOT NULL REFERENCES universities(id) ON DELETE CASCADE,
     academic_year VARCHAR(32) NOT NULL,               -- e.g. '2023-2024'
     placement_percentage NUMERIC(5, 2),
-    highest_package VARCHAR(64),
-    average_package VARCHAR(64),
-    median_package VARCHAR(64),
+    highest_package VARCHAR(128),
+    average_package VARCHAR(128),
+    median_package VARCHAR(128),
     currency VARCHAR(10) DEFAULT 'INR',
     total_offers INTEGER,
     recruiting_companies JSONB DEFAULT '[]'::jsonb,
