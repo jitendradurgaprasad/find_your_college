@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { 
   Cpu, 
@@ -14,13 +15,19 @@ import {
   ArrowRight,
   Layers,
   FileCheck,
-  FileText
+  FileText,
+  Sparkles,
+  Loader2,
+  Key
 } from "lucide-react";
-import { startCrawlJob, fetchCrawlStatus, CrawlJobStatus } from "@/lib/api";
+import CollegeSearchAutocomplete from "@/components/CollegeSearchAutocomplete";
+import { startCrawlJob, fetchCrawlStatus, resolveCollegeUrl, CrawlJobStatus, CollegeSuggestion } from "@/lib/api";
 
-export default function WebsiteScannerPage() {
-  const [url, setUrl] = useState("");
-  const [universityName, setUniversityName] = useState("");
+function ScannerContent() {
+  const searchParams = useSearchParams();
+
+  const [url, setUrl] = useState(searchParams.get("url") || "");
+  const [universityName, setUniversityName] = useState(searchParams.get("name") || "");
   const [maxDepth, setMaxDepth] = useState(2);
   const [maxPages, setMaxPages] = useState(25);
 
@@ -28,6 +35,25 @@ export default function WebsiteScannerPage() {
   const [jobStatus, setJobStatus] = useState<CrawlJobStatus | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Auto URL fetching state
+  const [isResolvingUrl, setIsResolvingUrl] = useState(false);
+  const [resolveSuccessNote, setResolveSuccessNote] = useState<string | null>(null);
+  const [geminiApiKey, setGeminiApiKey] = useState("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setGeminiApiKey(localStorage.getItem("FIND_YOUR_COLLEGE_GEMINI_KEY") || "");
+    }
+  }, []);
+
+  // Update when URL query params change
+  useEffect(() => {
+    const qUrl = searchParams.get("url");
+    const qName = searchParams.get("name");
+    if (qUrl) setUrl(qUrl);
+    if (qName) setUniversityName(qName);
+  }, [searchParams]);
 
   // Real-time status polling
   useEffect(() => {
@@ -50,13 +76,50 @@ export default function WebsiteScannerPage() {
     };
   }, [activeJobId, isScanning]);
 
+  // Auto URL fetching by college name
+  const handleAutoFetchUrl = async (nameToFetch?: string) => {
+    const targetName = nameToFetch || universityName;
+    if (!targetName.trim()) {
+      setErrorMsg("Please type a college name first to auto-fetch its official URL.");
+      return;
+    }
+
+    setIsResolvingUrl(true);
+    setErrorMsg(null);
+    setResolveSuccessNote(null);
+
+    try {
+      const res = await resolveCollegeUrl(targetName, geminiApiKey || undefined);
+      if (res.official_website) {
+        setUrl(res.official_website);
+        setResolveSuccessNote(
+          `Official URL fetched: ${res.domain} (${res.source}) - ${res.is_accessible ? "Accessible & Verified" : "Identified"}`
+        );
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || "Could not automatically resolve official website.");
+    } finally {
+      setIsResolvingUrl(false);
+    }
+  };
+
+  const handleSelectCollegeSuggestion = (college: CollegeSuggestion) => {
+    setUniversityName(college.name);
+    if (college.official_website) {
+      setUrl(college.official_website);
+      setResolveSuccessNote(`Official URL auto-filled from directory: ${college.official_website}`);
+    } else {
+      handleAutoFetchUrl(college.name);
+    }
+  };
+
   const handleStartScan = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
     const cleanUrl = url.trim();
     if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
-      setErrorMsg("Please provide a valid URL with http:// or https://");
+      setErrorMsg("Please provide a valid URL starting with http:// or https://");
       return;
     }
 
@@ -89,15 +152,43 @@ export default function WebsiteScannerPage() {
           Institutional Website Scanner
         </h1>
         <p className="text-sm text-slate-500 leading-relaxed max-w-2xl">
-          Enter any accredited university or college website URL to discover pages, extract course catalogues, admission statuses, faculty directories, and placement reports with real-time audit logging.
+          Enter any college name to auto-discover its official institutional website or paste an official domain to crawl course catalogues, admission statuses, faculty directories, and placement reports.
         </p>
       </div>
 
       {/* URL Entry Form */}
       <div className="p-6 sm:p-8 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-6">
-        <form onSubmit={handleStartScan} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="sm:col-span-2 space-y-1.5">
+        <form onSubmit={handleStartScan} className="space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Auto-suggesting College Name Input */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  College / University Name
+                </label>
+                <button
+                  type="button"
+                  onClick={() => handleAutoFetchUrl()}
+                  disabled={isResolvingUrl || !universityName.trim()}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-bold inline-flex items-center gap-1 disabled:opacity-40 transition"
+                >
+                  {isResolvingUrl ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                  <span>Auto-Fetch URL</span>
+                </button>
+              </div>
+
+              <CollegeSearchAutocomplete
+                value={universityName}
+                onChange={setUniversityName}
+                onSelect={handleSelectCollegeSuggestion}
+                autoNavigate={false}
+                placeholder="Type college name (e.g. NIT Warangal, IIT Delhi)..."
+                inputClassName="py-2.5 text-sm rounded-xl border border-slate-200 bg-slate-50/50 focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+
+            {/* Official Website URL */}
+            <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                 Official Website URL
               </label>
@@ -108,27 +199,24 @@ export default function WebsiteScannerPage() {
                   required
                   placeholder="https://www.iitb.ac.in"
                   value={url}
-                  onChange={(e) => setUrl(e.target.value)}
+                  onChange={(e) => {
+                    setUrl(e.target.value);
+                    setResolveSuccessNote(null);
+                  }}
                   disabled={isScanning}
                   className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:opacity-50"
                 />
               </div>
             </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Institution Name (Optional)
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. IIT Bombay"
-                value={universityName}
-                onChange={(e) => setUniversityName(e.target.value)}
-                disabled={isScanning}
-                className="w-full px-4 py-2.5 text-sm rounded-xl border border-slate-200 bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:opacity-50"
-              />
-            </div>
           </div>
+
+          {/* Resolve Success Note */}
+          {resolveSuccessNote && (
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-medium flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+              <span>{resolveSuccessNote}</span>
+            </div>
+          )}
 
           {/* Advanced Crawler Controls */}
           <div className="grid grid-cols-2 gap-4 pt-2">
@@ -170,23 +258,23 @@ export default function WebsiteScannerPage() {
           <div className="pt-2 flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs text-slate-500">
               <ShieldCheck className="h-4 w-4 text-emerald-600" />
-              <span>SSRF protected • Respects robots.txt policies</span>
+              <span>SSRF protected & robots.txt compliant</span>
             </div>
 
             <button
               type="submit"
-              disabled={isScanning}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow-sm transition active:scale-95 disabled:opacity-50"
+              disabled={isScanning || !url.trim()}
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:opacity-50 transition shadow-sm"
             >
               {isScanning ? (
                 <>
                   <RotateCw className="h-4 w-4 animate-spin" />
-                  <span>Crawling Website...</span>
+                  <span>Crawling in Progress...</span>
                 </>
               ) : (
                 <>
-                  <Cpu className="h-4 w-4" />
                   <span>Start Autonomous Scan</span>
+                  <ArrowRight className="h-4 w-4" />
                 </>
               )}
             </button>
@@ -194,102 +282,118 @@ export default function WebsiteScannerPage() {
         </form>
       </div>
 
-      {/* SCAN PROGRESS & METRICS CONSOLE */}
+      {/* Real-time Status Card */}
       {jobStatus && (
         <div className="p-6 sm:p-8 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-            <div>
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <span className={`h-2.5 w-2.5 rounded-full ${
-                  jobStatus.status === "COMPLETED" ? "bg-emerald-500" :
-                  jobStatus.status === "RUNNING" ? "bg-blue-500 animate-ping" : "bg-rose-500"
-                }`} />
-                <h3 className="text-base font-bold text-slate-900">
-                  Crawl Status: <span className="uppercase text-blue-600">{jobStatus.status}</span>
-                </h3>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Scan Job</span>
+                <span className="text-xs font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-600">{jobStatus.job_id.substring(0, 8)}...</span>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Seed Target: <strong className="text-slate-700">{jobStatus.seed_url}</strong>
-              </p>
+              <h3 className="text-base font-bold text-slate-900">{jobStatus.seed_url}</h3>
             </div>
 
-            {jobStatus.status === "COMPLETED" && jobStatus.university_id && (
-              <Link
-                href={`/colleges/${jobStatus.university_id}`}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-sm"
-              >
-                <span>Open Extracted Profile</span>
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            )}
+            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+              jobStatus.status === "COMPLETED" ? "bg-emerald-100 text-emerald-800" :
+              jobStatus.status === "RUNNING" ? "bg-blue-100 text-blue-800 animate-pulse" :
+              jobStatus.status === "FAILED" ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-800"
+            }`}>
+              {jobStatus.status}
+            </span>
           </div>
 
-          {/* Real Backend Progress Bar */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
-              <span>Pages Scanned: {jobStatus.pages_crawled} / {jobStatus.max_pages}</span>
+          {/* Progress Bar */}
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs font-semibold text-slate-600">
+              <span>Overall Progress</span>
               <span>{calculateProgressPercent()}%</span>
             </div>
-            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
-              <div
-                className={`h-full transition-all duration-300 ${
-                  jobStatus.status === "COMPLETED" ? "bg-emerald-500" : "bg-blue-600"
-                }`}
+            <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-blue-600 transition-all duration-300 rounded-full"
                 style={{ width: `${calculateProgressPercent()}%` }}
               />
             </div>
           </div>
 
-          {/* Real Live Metrics Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
-              <span className="text-xs text-slate-500 font-medium">Discovered Links</span>
-              <p className="text-xl font-extrabold text-slate-900 mt-0.5">{jobStatus.pages_discovered}</p>
+          {/* Real-time Live Counters */}
+          <div className="grid grid-cols-3 gap-4 pt-2">
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
+              <div className="text-2xl font-extrabold text-slate-900">{jobStatus.pages_discovered}</div>
+              <div className="text-xs font-medium text-slate-500 mt-1 flex items-center justify-center gap-1">
+                <Globe className="h-3.5 w-3.5 text-blue-500" />
+                <span>Pages Discovered</span>
+              </div>
             </div>
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
-              <span className="text-xs text-slate-500 font-medium">Crawled Pages</span>
-              <p className="text-xl font-extrabold text-blue-600 mt-0.5">{jobStatus.pages_crawled}</p>
+
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
+              <div className="text-2xl font-extrabold text-slate-900">{jobStatus.pages_crawled}</div>
+              <div className="text-xs font-medium text-slate-500 mt-1 flex items-center justify-center gap-1">
+                <Layers className="h-3.5 w-3.5 text-indigo-500" />
+                <span>Pages Crawled</span>
+              </div>
             </div>
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
-              <span className="text-xs text-slate-500 font-medium">Records Extracted</span>
-              <p className="text-xl font-extrabold text-emerald-600 mt-0.5">{jobStatus.records_extracted}</p>
-            </div>
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
-              <span className="text-xs text-slate-500 font-medium">Scan Duration</span>
-              <p className="text-xl font-extrabold text-slate-900 mt-0.5">
-                {jobStatus.duration_seconds ? `${jobStatus.duration_seconds}s` : "In Progress"}
-              </p>
+
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
+              <div className="text-2xl font-extrabold text-slate-900">{jobStatus.records_extracted}</div>
+              <div className="text-xs font-medium text-slate-500 mt-1 flex items-center justify-center gap-1">
+                <FileCheck className="h-3.5 w-3.5 text-emerald-500" />
+                <span>Facts Extracted</span>
+              </div>
             </div>
           </div>
 
-          {/* Live Extraction Terminal Console */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider">
-              <Terminal className="h-4 w-4 text-slate-500" />
-              <span>Real-Time Engine Console Logs</span>
-            </div>
-            <div className="p-4 rounded-2xl bg-slate-950 font-mono text-xs text-slate-300 max-h-60 overflow-y-auto space-y-1.5 shadow-inner">
-              {jobStatus.logs && jobStatus.logs.length > 0 ? (
-                jobStatus.logs.map((log, lIdx) => (
-                  <div key={lIdx} className="flex items-start gap-2 leading-relaxed">
-                    <span className="text-slate-600 select-none">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
-                    <span className={`font-bold select-none ${
-                      log.level === "SUCCESS" ? "text-emerald-400" :
+          {/* Real-time Live Log Feed */}
+          {jobStatus.logs && jobStatus.logs.length > 0 && (
+            <div className="space-y-2 pt-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                <Terminal className="h-3.5 w-3.5 text-slate-400" />
+                <span>Live Crawler Activity</span>
+              </div>
+              <div className="bg-slate-950 rounded-2xl p-4 font-mono text-xs text-slate-300 max-h-48 overflow-y-auto space-y-1.5 shadow-inner">
+                {jobStatus.logs.map((log: any, idx: number) => (
+                  <div key={idx} className="flex items-start gap-2">
+                    <span className="text-slate-500 select-none">[{log.level}]</span>
+                    <span className={
                       log.level === "ERROR" ? "text-rose-400" :
-                      log.level === "WARNING" ? "text-amber-400" : "text-blue-400"
-                    }`}>
-                      [{log.level}]
+                      log.level === "WARNING" ? "text-amber-400" : "text-slate-300"
+                    }>
+                      {log.message}
                     </span>
-                    <span className="text-slate-200">{log.message}</span>
                   </div>
-                ))
-              ) : (
-                <div className="text-slate-500 italic">Initializing crawler worker engine...</div>
-              )}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Action When Completed */}
+          {jobStatus.status === "COMPLETED" && (
+            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                <span className="text-sm font-bold text-emerald-900">
+                  Crawl & Extraction Completed! Verified facts added to database.
+                </span>
+              </div>
+              <Link
+                href="/search"
+                className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 transition"
+              >
+                View in Directory
+              </Link>
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+export default function WebsiteScannerPage() {
+  return (
+    <Suspense fallback={<div className="p-12 text-center text-sm text-slate-500">Loading website scanner...</div>}>
+      <ScannerContent />
+    </Suspense>
   );
 }

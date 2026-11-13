@@ -195,3 +195,82 @@ export async function rescanUniversity(id: string) {
   if (!res.ok) throw new Error("Failed to initiate rescan");
   return await res.json();
 }
+
+export interface CollegeSuggestion {
+  id?: string;
+  name: string;
+  short_name?: string;
+  city?: string;
+  state?: string;
+  official_website?: string;
+  slug?: string;
+  institution_type?: string;
+  data_completeness_score?: number;
+  is_in_database: boolean;
+}
+
+export interface URLResolveResponse {
+  name: string;
+  official_website: string;
+  domain: string;
+  confidence: number;
+  source: string;
+  is_accessible: boolean;
+  note?: string;
+}
+
+export interface RecommendedInstitution {
+  name: string;
+  location?: string;
+  official_website?: string;
+  key_highlights?: string;
+  why_recommended?: string;
+  matched_id?: string;
+}
+
+export interface AISearchResponse {
+  query: string;
+  ai_answer: string;
+  recommended_institutions: RecommendedInstitution[];
+  matched_colleges: UniversitySummary[];
+  confidence: number;
+  source: string;
+}
+
+export async function fetchSuggestions(query: string, limit = 8): Promise<CollegeSuggestion[]> {
+  if (!query || query.trim().length === 0) return [];
+  try {
+    const res = await fetch(`${API_BASE}/universities/suggest?query=${encodeURIComponent(query.trim())}&limit=${limit}`);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (err) {
+    return [];
+  }
+}
+
+export async function resolveCollegeUrl(name: string, apiKey?: string): Promise<URLResolveResponse> {
+  const params = new URLSearchParams({ name: name.trim() });
+  if (apiKey) params.append("api_key", apiKey.trim());
+  const res = await fetch(`${API_BASE}/universities/resolve-url?${params.toString()}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Could not automatically resolve official website.");
+  }
+  return await res.json();
+}
+
+export async function performAISearch(query: string, apiKey?: string): Promise<AISearchResponse> {
+  const res = await fetch(`${API_BASE}/universities/ai-search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: query.trim(),
+      api_key: apiKey ? apiKey.trim() : undefined
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "AI search failed to process inquiry.");
+  }
+  return await res.json();
+}

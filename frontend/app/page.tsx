@@ -21,6 +21,7 @@ import {
   Compass
 } from "lucide-react";
 import CollegeCard from "@/components/CollegeCard";
+import CollegeSearchAutocomplete from "@/components/CollegeSearchAutocomplete";
 import { fetchUniversities, fetchDataQuality, UniversitySummary, QualityMetrics } from "@/lib/api";
 
 export default function HomePage() {
@@ -99,31 +100,36 @@ export default function HomePage() {
             Discover colleges, explore courses, compare opportunities, and stay informed about admissions and scholarships — all in one place.
           </p>
 
-          {/* Main Search Bar */}
+          {/* Main Search Bar with Real-time Auto-Suggest */}
           <div className="max-w-3xl mx-auto pt-4">
             <form onSubmit={handleSearchSubmit} className="relative flex items-center shadow-lg rounded-2xl bg-white border border-slate-200 p-2 focus-within:ring-2 focus-within:ring-blue-600 focus-within:border-blue-600 transition">
-              <div className="pl-3 text-slate-400">
-                <Search className="h-5 w-5" />
-              </div>
-              <input
-                type="text"
+              <CollegeSearchAutocomplete
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search colleges, universities, courses, scholarships..."
-                className="w-full px-4 py-3 text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:outline-none bg-transparent"
+                onChange={setSearchQuery}
+                autoNavigate={true}
+                placeholder="Type college name (e.g. BITS Pilani, IIT Bombay, Stanford)..."
+                inputClassName="py-3 text-sm sm:text-base bg-transparent border-0"
               />
               <button
                 type="submit"
-                className="flex-shrink-0 inline-flex items-center gap-1.5 px-6 py-3 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 active:scale-95 transition shadow-sm"
+                className="flex-shrink-0 inline-flex items-center gap-1.5 px-6 py-3 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 active:scale-95 transition shadow-sm ml-2"
               >
                 <span>Search</span>
                 <ArrowRight className="h-4 w-4" />
               </button>
             </form>
 
-            {/* Quick Location Pills */}
+            {/* Quick Actions & AI Search Pill */}
             <div className="flex items-center justify-center gap-2 mt-4 flex-wrap text-xs text-slate-500">
-              <span className="font-medium text-slate-400">Quick Locations:</span>
+              <button
+                type="button"
+                onClick={() => router.push(`/search?ai=true&query=${encodeURIComponent(searchQuery || "Top engineering colleges with open admissions and scholarships")}`)}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold shadow-sm hover:from-blue-700 hover:to-indigo-700 transition"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>AI Smart Search (Gemini)</span>
+              </button>
+              <span className="font-medium text-slate-400 ml-2">Quick Locations:</span>
               {popularLocations.map((loc) => (
                 <button
                   key={loc.city}

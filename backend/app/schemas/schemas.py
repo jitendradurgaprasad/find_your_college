@@ -303,3 +303,48 @@ class MonitoringChange(BaseModel):
     current_value: Optional[str] = None
     detected_at: datetime
     source_url: str
+
+# Auto-Suggestion & Autocomplete Schema
+class CollegeSuggestion(BaseModel):
+    id: Optional[str] = None
+    name: str
+    short_name: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    official_website: Optional[str] = None
+    slug: Optional[str] = None
+    institution_type: Optional[str] = None
+    data_completeness_score: Optional[float] = None
+    is_in_database: bool = True
+    model_config = {"from_attributes": True}
+
+# Auto URL Resolution Schema
+class URLResolveResponse(BaseModel):
+    name: str
+    official_website: str
+    domain: str
+    confidence: float
+    source: str
+    is_accessible: bool
+    note: Optional[str] = None
+
+# AI Smart Search Schemas
+class AISearchRequest(BaseModel):
+    query: str
+    api_key: Optional[str] = None
+
+class RecommendedInstitution(BaseModel):
+    name: str
+    location: Optional[str] = None
+    official_website: Optional[str] = None
+    key_highlights: Optional[str] = None
+    why_recommended: Optional[str] = None
+    matched_id: Optional[str] = None
+
+class AISearchResponse(BaseModel):
+    query: str
+    ai_answer: str
+    recommended_institutions: List[RecommendedInstitution] = []
+    matched_colleges: List[UniversitySummary] = []
+    confidence: float = 0.95
+    source: str = "Gemini AI"

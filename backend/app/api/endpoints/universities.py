@@ -12,9 +12,11 @@ from app.models.models import (
 from app.schemas.schemas import (
     UniversitySummary, UniversityProfile, AdmissionSchema, ProgramSchema,
     ScholarshipSchema, FacultySchema, PlacementSchema, NotificationSchema,
-    FacilitySchema, ContactSchema, TraceableFact, SearchRequest, SearchResponse
+    FacilitySchema, ContactSchema, TraceableFact, SearchRequest, SearchResponse,
+    CollegeSuggestion, URLResolveResponse, AISearchRequest, AISearchResponse, RecommendedInstitution
 )
 from crawler.discovery import DiscoveryEngine
+from extraction.ai_extractor import AIExtractor
 from worker.job_manager import BackgroundJobManager
 
 router = APIRouter()
@@ -136,6 +138,245 @@ def search_universities(payload: SearchRequest, db: Session = Depends(get_db)):
         page=payload.page,
         page_size=payload.page_size,
         db=db
+    )
+
+POPULAR_INSTITUTIONS_CATALOG = [
+    {"name": "Indian Institute of Technology Bombay", "short_name": "IIT Bombay", "city": "Mumbai", "state": "Maharashtra", "website": "https://www.iitb.ac.in", "type": "Institute of National Importance"},
+    {"name": "Birla Institute of Technology and Science, Pilani", "short_name": "BITS Pilani", "city": "Pilani", "state": "Rajasthan", "website": "https://www.bits-pilani.ac.in", "type": "Deemed University"},
+    {"name": "International Institute of Information Technology Hyderabad", "short_name": "IIIT Hyderabad", "city": "Hyderabad", "state": "Telangana", "website": "https://www.iiit.ac.in", "type": "Autonomous University"},
+    {"name": "Indian Institute of Technology Delhi", "short_name": "IIT Delhi", "city": "New Delhi", "state": "Delhi", "website": "https://home.iitd.ac.in", "type": "Institute of National Importance"},
+    {"name": "Indian Institute of Technology Madras", "short_name": "IIT Madras", "city": "Chennai", "state": "Tamil Nadu", "website": "https://www.iitm.ac.in", "type": "Institute of National Importance"},
+    {"name": "Indian Institute of Technology Kharagpur", "short_name": "IIT Kharagpur", "city": "Kharagpur", "state": "West Bengal", "website": "https://www.iitkgp.ac.in", "type": "Institute of National Importance"},
+    {"name": "Indian Institute of Science Bangalore", "short_name": "IISc Bangalore", "city": "Bengaluru", "state": "Karnataka", "website": "https://iisc.ac.in", "type": "Deemed University"},
+    {"name": "National Institute of Technology Warangal", "short_name": "NIT Warangal", "city": "Warangal", "state": "Telangana", "website": "https://www.nitw.ac.in", "type": "National Institute of Technology"},
+    {"name": "National Institute of Technology Tiruchirappalli", "short_name": "NIT Trichy", "city": "Tiruchirappalli", "state": "Tamil Nadu", "website": "https://www.nitt.edu", "type": "National Institute of Technology"},
+    {"name": "Vellore Institute of Technology", "short_name": "VIT Vellore", "city": "Vellore", "state": "Tamil Nadu", "website": "https://vit.ac.in", "type": "Deemed University"},
+    {"name": "University of Delhi", "short_name": "Delhi University", "city": "New Delhi", "state": "Delhi", "website": "https://www.du.ac.in", "type": "Central University"},
+    {"name": "Anna University", "short_name": "Anna University", "city": "Chennai", "state": "Tamil Nadu", "website": "https://www.annauniv.edu", "type": "State University"},
+    {"name": "Stanford University", "short_name": "Stanford", "city": "Stanford", "state": "California", "website": "https://www.stanford.edu", "type": "Private University"},
+    {"name": "Massachusetts Institute of Technology", "short_name": "MIT", "city": "Cambridge", "state": "Massachusetts", "website": "https://www.mit.edu", "type": "Private University"}
+]
+
+@router.get("/suggest", response_model=List[CollegeSuggestion])
+def suggest_colleges(
+    query: str = Query(..., min_length=1, description="College name or prefix to suggest"),
+    limit: int = Query(8, ge=1, le=20),
+    db: Session = Depends(get_db)
+):
+    """
+    Real-time autocomplete and fuzzy suggestion endpoint for college searches.
+    Returns matching institutions from database and educational directory.
+    """
+    clean_q = query.strip()
+    search_pattern = f"%{clean_q}%"
+    suggestions: List[CollegeSuggestion] = []
+    seen_names = set()
+
+    # 1. Search database
+    db_matches = db.query(University).filter(
+        University.is_active == True,
+        or_(
+            University.name.ilike(search_pattern),
+            University.short_name.ilike(search_pattern),
+            University.city.ilike(search_pattern),
+            University.state.ilike(search_pattern)
+        )
+    ).limit(limit).all()
+
+    for u in db_matches:
+        seen_names.add(u.name.lower())
+        suggestions.append(
+            CollegeSuggestion(
+                id=u.id,
+                name=u.name,
+                short_name=u.short_name,
+                city=u.city,
+                state=u.state,
+                official_website=u.official_website,
+                slug=u.slug,
+                institution_type=u.institution_type,
+                data_completeness_score=float(u.data_completeness_score or 0),
+                is_in_database=True
+            )
+        )
+
+    # 2. Complement with recognized institution catalog if needed
+    if len(suggestions) < limit:
+        q_lower = clean_q.lower()
+        for cat in POPULAR_INSTITUTIONS_CATALOG:
+            if len(suggestions) >= limit:
+                break
+            if cat["name"].lower() in seen_names:
+                continue
+            if (
+                q_lower in cat["name"].lower() or 
+                q_lower in cat["short_name"].lower() or 
+                q_lower in cat["city"].lower()
+            ):
+                seen_names.add(cat["name"].lower())
+                suggestions.append(
+                    CollegeSuggestion(
+                        id=None,
+                        name=cat["name"],
+                        short_name=cat["short_name"],
+                        city=cat["city"],
+                        state=cat["state"],
+                        official_website=cat["website"],
+                        slug=cat["short_name"].lower().replace(" ", "-"),
+                        institution_type=cat["type"],
+                        data_completeness_score=0.0,
+                        is_in_database=False
+                    )
+                )
+
+    return suggestions
+
+@router.get("/resolve-url", response_model=URLResolveResponse)
+def resolve_college_url(
+    name: str = Query(..., min_length=2, description="College or university name"),
+    api_key: Optional[str] = Query(None, description="Optional custom Gemini API key"),
+    db: Session = Depends(get_db)
+):
+    """
+    Auto-fetches the genuine, official institutional website URL and domain given a college name.
+    Prioritizes verified database records, then Gemini AI intelligence, then discovery engine.
+    """
+    clean_name = name.strip()
+
+    # 1. Check existing database
+    existing = db.query(University).filter(
+        or_(
+            University.name.ilike(f"%{clean_name}%"),
+            University.short_name.ilike(f"%{clean_name}%")
+        )
+    ).first()
+
+    if existing:
+        return URLResolveResponse(
+            name=existing.name,
+            official_website=existing.official_website,
+            domain=existing.domain,
+            confidence=1.0,
+            source="Verified Database",
+            is_accessible=True,
+            note="Official website retrieved from verified institutional dataset."
+        )
+
+    # 2. Check catalog
+    for cat in POPULAR_INSTITUTIONS_CATALOG:
+        if (
+            clean_name.lower() in cat["name"].lower() or 
+            clean_name.lower() in cat["short_name"].lower()
+        ):
+            domain = cat["website"].replace("https://", "").replace("http://", "").split("/")[0].replace("www.", "")
+            return URLResolveResponse(
+                name=cat["name"],
+                official_website=cat["website"],
+                domain=domain,
+                confidence=0.98,
+                source="Institutional Catalog",
+                is_accessible=True,
+                note="Official institutional domain resolved from recognized directory."
+            )
+
+    # 3. Use Gemini AI Resolver
+    ai_extractor = AIExtractor(api_key=api_key)
+    ai_result = ai_extractor.resolve_official_url(clean_name, api_key=api_key)
+    if ai_result.get("official_website"):
+        return URLResolveResponse(
+            name=ai_result.get("name", clean_name),
+            official_website=ai_result["official_website"],
+            domain=ai_result.get("domain", ""),
+            confidence=ai_result.get("confidence", 0.90),
+            source=ai_result.get("source", "Gemini AI"),
+            is_accessible=ai_result.get("is_accessible", True),
+            note=ai_result.get("note", "Resolved via Gemini AI")
+        )
+
+    # 4. Fallback: Discovery Engine
+    discovery = DiscoveryEngine()
+    disc_results = discovery.discover_institutions(clean_name, max_results=1)
+    if disc_results:
+        top_disc = disc_results[0]
+        return URLResolveResponse(
+            name=top_disc.get("name", clean_name),
+            official_website=top_disc["official_website"],
+            domain=top_disc.get("domain", ""),
+            confidence=0.80,
+            source="Discovery Engine",
+            is_accessible=True,
+            note="Discovered official domain via search crawler."
+        )
+
+    raise HTTPException(
+        status_code=404,
+        detail=f"Could not automatically resolve official website for '{clean_name}'. Please enter the URL manually or supply a Gemini API key."
+    )
+
+@router.post("/ai-search", response_model=AISearchResponse)
+def ai_smart_search(
+    payload: AISearchRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    AI-powered natural language college discovery using Gemini.
+    Understands conversational criteria (placements, open admissions, tuition budget, degree programs).
+    """
+    db_unis = db.query(University).filter(University.is_active == True).all()
+    db_context = [
+        {
+            "id": u.id,
+            "name": u.name,
+            "city": u.city,
+            "state": u.state,
+            "institution_type": u.institution_type,
+            "official_website": u.official_website,
+            "data_completeness_score": float(u.data_completeness_score or 0)
+        }
+        for u in db_unis
+    ]
+
+    ai_extractor = AIExtractor(api_key=payload.api_key)
+    result = ai_extractor.smart_search(
+        query=payload.query,
+        db_colleges=db_context,
+        api_key=payload.api_key
+    )
+
+    # Link recommended institutions with any matching database IDs
+    recommended = []
+    for rec in result.get("recommended_institutions", []):
+        r_name = rec.get("name", "").lower()
+        matched_id = None
+        for u in db_unis:
+            if u.name.lower() in r_name or r_name in u.name.lower() or (u.short_name and u.short_name.lower() in r_name):
+                matched_id = u.id
+                break
+        recommended.append(
+            RecommendedInstitution(
+                name=rec.get("name", ""),
+                location=rec.get("location"),
+                official_website=rec.get("official_website"),
+                key_highlights=rec.get("key_highlights"),
+                why_recommended=rec.get("why_recommended"),
+                matched_id=matched_id
+            )
+        )
+
+    # Convert matching DB universities to UniversitySummary
+    matched_colleges: List[UniversitySummary] = []
+    for u in db_unis:
+        u_lower = u.name.lower()
+        if any(w in u_lower for w in payload.query.lower().split() if len(w) > 3):
+            matched_colleges.append(UniversitySummary.from_orm(u))
+
+    return AISearchResponse(
+        query=payload.query,
+        ai_answer=result.get("ai_answer", "AI Search analysis complete."),
+        recommended_institutions=recommended,
+        matched_colleges=matched_colleges,
+        confidence=result.get("confidence", 0.95),
+        source=result.get("source", "Gemini AI")
     )
 
 @router.get("/{univ_id}", response_model=UniversityProfile)

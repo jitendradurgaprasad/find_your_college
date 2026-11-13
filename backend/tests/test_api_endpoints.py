@@ -73,3 +73,26 @@ def test_crawl_validation():
     resp = client.post("/api/crawl/start", json={"url": "http://127.0.0.1:8000/secret"})
     assert resp.status_code == 400
     assert "SSRF" in resp.json()["detail"] or "Private" in resp.json()["detail"]
+
+def test_suggest_colleges_endpoint():
+    resp = client.get("/api/universities/suggest?query=BITS")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list)
+    assert len(data) > 0
+    assert any("BITS" in item["name"] or "BITS" in (item["short_name"] or "") for item in data)
+
+def test_resolve_college_url_endpoint():
+    resp = client.get("/api/universities/resolve-url?name=BITS Pilani")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "official_website" in data
+    assert "bits-pilani" in data["official_website"]
+    assert data["confidence"] > 0.8
+
+def test_ai_search_endpoint():
+    resp = client.post("/api/universities/ai-search", json={"query": "Colleges with computer science in Mumbai"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "ai_answer" in data
+    assert "recommended_institutions" in data
