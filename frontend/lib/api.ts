@@ -128,16 +128,31 @@ export async function fetchUniversityProfile(id: string): Promise<UniversityProf
 }
 
 export async function startCrawlJob(url: string, maxDepth: number = 2, maxPages: number = 25, universityName?: string) {
-  const res = await fetch(`${API_BASE}/crawl/start`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, max_depth: maxDepth, max_pages: maxPages, university_name: universityName })
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Crawl request failed" }));
-    throw new Error(err.detail || "Failed to start crawler");
+  // Use longer timeout for Render cold-start (free tier can take ~30s to wake)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
+
+  try {
+    const res = await fetch(`${API_BASE}/crawl/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, max_depth: maxDepth, max_pages: maxPages, university_name: universityName }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Crawl request failed" }));
+      throw new Error(err.detail || "Failed to start crawler");
+    }
+    return await res.json();
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === "AbortError") {
+      throw new Error("Backend server is waking up (Render free tier cold-start). Please wait 30 seconds and try again.");
+    }
+    throw err;
   }
-  return await res.json();
 }
 
 export async function fetchCrawlStatus(jobId: string): Promise<CrawlJobStatus | null> {

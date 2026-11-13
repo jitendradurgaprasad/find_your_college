@@ -55,6 +55,14 @@ function ScannerContent() {
     if (qName) setUniversityName(qName);
   }, [searchParams]);
 
+  // Pre-flight: wake up Render backend on page load (free tier cold-start)
+  const [backendReady, setBackendReady] = useState(false);
+  useEffect(() => {
+    fetch((process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000/api").replace("/api", "/health"))
+      .then((res) => { if (res.ok) setBackendReady(true); })
+      .catch(() => {});
+  }, []);
+
   // Real-time status polling
   useEffect(() => {
     let interval: NodeJS.Timeout;
