@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_, desc
+from sqlalchemy import or_, and_, desc, func
 from typing import List, Optional
 from datetime import datetime
 
@@ -61,6 +61,8 @@ def list_universities(
     if institution_type:
         q = q.filter(University.institution_type.ilike(f"%{institution_type}%"))
 
+    has_joins = bool(admission_status or degree_type or has_scholarship)
+
     if admission_status:
         q = q.join(Admission).filter(Admission.admission_status == admission_status.upper())
 
@@ -70,11 +72,20 @@ def list_universities(
     if has_scholarship:
         q = q.join(Scholarship)
 
-    total = q.distinct().count()
-    universities = q.order_by(desc(University.data_completeness_score), University.name)\
-                    .offset((page - 1) * page_size)\
-                    .limit(page_size)\
-                    .all()
+    if has_joins:
+        subq = q.with_entities(University.id).distinct().subquery()
+        total = db.query(func.count()).select_from(subq).scalar() or 0
+        universities = db.query(University).filter(University.id.in_(q.with_entities(University.id)))\
+                        .order_by(desc(University.data_completeness_score), University.name)\
+                        .offset((page - 1) * page_size)\
+                        .limit(page_size)\
+                        .all()
+    else:
+        total = q.count()
+        universities = q.order_by(desc(University.data_completeness_score), University.name)\
+                        .offset((page - 1) * page_size)\
+                        .limit(page_size)\
+                        .all()
 
     results = []
     for u in universities:

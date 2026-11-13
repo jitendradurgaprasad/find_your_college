@@ -144,14 +144,27 @@ export async function fetchUniversities(params: {
 }
 
 export async function fetchUniversityProfile(id: string): Promise<UniversityProfile | null> {
-  try {
-    const res = await fetch(`${API_BASE}/universities/${id}`, { cache: "no-store" });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    console.error("Error fetching university profile:", err);
-    return null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetch(`${API_BASE}/universities/${id}`, { cache: "no-store" });
+      if (!res.ok) {
+        if (attempt === 1) {
+          await new Promise((r) => setTimeout(r, 1500));
+          continue;
+        }
+        return null;
+      }
+      return await res.json();
+    } catch (err) {
+      if (attempt === 1) {
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
+      console.error("Error fetching university profile:", err);
+      return null;
+    }
   }
+  return null;
 }
 
 export async function startCrawlJob(url: string, maxDepth: number = 2, maxPages: number = 25, universityName?: string) {
