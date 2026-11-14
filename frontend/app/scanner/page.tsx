@@ -48,12 +48,17 @@ function ScannerContent() {
     }
   }, []);
 
-  // Update when URL query params change
+  // Update when URL query params change & auto-start scan if requested
   useEffect(() => {
     const qUrl = searchParams.get("url");
     const qName = searchParams.get("name");
+    const qAuto = searchParams.get("auto");
     if (qUrl) setUrl(qUrl);
     if (qName) setUniversityName(qName);
+
+    if (qAuto === "true" && qUrl && !isScanning && !activeJobId) {
+      handleStartScan(undefined, qUrl, qName || undefined);
+    }
   }, [searchParams]);
 
   // Pre-flight: wake up Render backend on page load (free tier cold-start)
@@ -122,19 +127,19 @@ function ScannerContent() {
     }
   };
 
-  const handleStartScan = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleStartScan = async (e?: React.FormEvent, overrideUrl?: string, overrideName?: string) => {
+    if (e) e.preventDefault();
     setErrorMsg(null);
 
-    const cleanUrl = url.trim();
-    if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+    const targetUrl = (overrideUrl || url).trim();
+    if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
       setErrorMsg("Please provide a valid URL starting with http:// or https://");
       return;
     }
 
     try {
       setIsScanning(true);
-      const res = await startCrawlJob(cleanUrl, maxDepth, maxPages, universityName.trim() || undefined);
+      const res = await startCrawlJob(targetUrl, maxDepth, maxPages, (overrideName || universityName).trim() || undefined);
       setActiveJobId(res.job_id);
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to start crawler engine");
