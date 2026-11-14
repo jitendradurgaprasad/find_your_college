@@ -20,6 +20,7 @@ from extraction.scholarship_extractor import ScholarshipExtractor
 from extraction.faculty_extractor import FacultyExtractor
 from extraction.placement_extractor import PlacementExtractor
 from extraction.other_extractors import FacilitiesExtractor, NotificationExtractor, ContactExtractor
+from extraction.ai_extractor import AIExtractor
 from quality.validator import DataValidator
 from quality.deduplicator import Deduplicator
 from quality.verifier import DataVerifier
@@ -33,7 +34,7 @@ class BackgroundJobManager:
             cls._instance = super(BackgroundJobManager, cls).__new__(cls)
         return cls._instance
 
-    def start_crawl_job(self, seed_url: str, max_depth: int = 2, max_pages: int = 25, university_name: Optional[str] = None) -> str:
+    def start_crawl_job(self, seed_url: str, max_depth: int = 2, max_pages: int = 40, university_name: Optional[str] = None) -> str:
         job_id = str(uuid.uuid4())
         db = SessionLocal()
         try:
@@ -198,15 +199,35 @@ class BackgroundJobManager:
 
             # Deduplication
             all_courses = Deduplicator.deduplicate_courses(all_courses)
+            all_admissions = Deduplicator.deduplicate_admissions(all_admissions)
             all_faculty = Deduplicator.deduplicate_faculty(all_faculty)
             all_scholarships = Deduplicator.deduplicate_scholarships(all_scholarships)
 
-            # Persist Admissions
+            # AI Booster: if few courses discovered, enrich via Gemini AI
+            if len(all_courses) < 6:
+                ai_ext = AIExtractor()
+                if ai_ext.is_available():
+                    self._log_job_event(db, job_id, "INFO", "Enriching course catalog via Gemini AI booster...")
+                    academic_texts = [
+                        p.get("cleaned_text", "")
+                        for p in crawled_pages
+                        if any(cat in p.get("categories", []) for cat in ["COURSES", "GENERAL"])
+                    ]
+                    ai_courses = ai_ext.extract_courses_from_text(academic_texts, norm_name, seed_url)
+                    if ai_courses:
+                        all_courses.extend(ai_courses)
+                        all_courses = Deduplicator.deduplicate_courses(all_courses)
+
+            # Clean previous duplicate admissions for this university to avoid stacking duplicates
+            db.query(Admission).filter(Admission.university_id == univ.id).delete()
+            db.commit()
+
+            # Persist Deduplicated Admissions
             for adm in all_admissions:
                 adm_entity = Admission(
                     id=str(uuid.uuid4()),
                     university_id=univ.id,
-                    academic_year=adm.get("academic_year", "2025-2026"),
+                    academic_year=adm.get("academic_year", "2026-2027"),
                     admission_status=adm.get("admission_status", "UNKNOWN"),
                     title=adm.get("title", "Admissions Announcement"),
                     description=adm.get("description"),
@@ -214,7 +235,7 @@ class BackgroundJobManager:
                     application_fee=adm.get("application_fee"),
                     source_url=adm.get("source_url", seed_url),
                     source_evidence=adm.get("source_evidence"),
-                    confidence_score=adm.get("confidence_score", 0.85),
+                    confidence_score=adm.get("confidence_score", 0.90),
                     verification_status=adm.get("verification_status", "VERIFIED")
                 )
                 db.add(adm_entity)
@@ -231,12 +252,23 @@ class BackgroundJobManager:
                     academic_year=adm.get("academic_year"),
                     source_url=adm.get("source_url", seed_url),
                     source_page_title="Admission Announcement",
-                    confidence_score=adm.get("confidence_score", 0.85),
+                    confidence_score=adm.get("confidence_score", 0.90),
                     verification_status=adm.get("verification_status", "VERIFIED")
                 ))
 
+            # Fetch existing programs for this university to avoid duplicates
+            existing_programs = {
+                (re.sub(r"[^a-zA-Z0-9]", "", p.name.lower()), (p.degree_type or "").lower().strip())
+                for p in db.query(Program).filter(Program.university_id == univ.id).all()
+            }
+
             # Persist Programs
             for c in all_courses:
+                p_key = (re.sub(r"[^a-zA-Z0-9]", "", c["name"].lower()), (c["degree_type"] or "").lower().strip())
+                if p_key in existing_programs:
+                    continue
+                existing_programs.add(p_key)
+
                 prog_entity = Program(
                     id=str(uuid.uuid4()),
                     university_id=univ.id,

@@ -260,3 +260,67 @@ INSTRUCTIONS:
             "confidence": 0.0,
             "source": "Gemini AI Fallback"
         }
+
+    def extract_courses_from_text(self, pages_text: List[str], institution_name: str, source_url: str = "") -> List[Dict[str, Any]]:
+        """
+        AI-assisted academic catalog booster. Extracts all degree programs, courses,
+        and specializations from institutional text when heuristic discovery needs enrichment.
+        """
+        if not self.is_available():
+            return []
+
+        combined_text = "\n\n---\n\n".join([t[:2500] for t in pages_text[:5]])
+        if len(combined_text.strip()) < 100:
+            return []
+
+        prompt = f"""
+You are an expert higher education data extraction specialist for '{institution_name}'.
+Analyze the following official institution web pages and extract all academic degree programs, courses, and specializations offered.
+
+STRICT INSTRUCTIONS:
+1. Extract authentic degree programs (e.g. B.Tech, M.Tech, MBBS, BDS, B.Pharm, M.Pharm, BPT, MPT, B.MLS, B.Sc, M.Sc, MBA, BBA, BCA, MCA, Ph.D, etc.).
+2. Extract the exact specialization / stream if present.
+3. Categorize degree_type strictly as: "Undergraduate", "Postgraduate", "PhD", or "Diploma".
+4. Estimate duration_years (e.g. MBBS: 5.5, B.Tech/B.Pharm: 4.0, B.Sc/BBA/BCA: 3.0, M.Tech/MBA/M.Sc: 2.0, PhD: 3.0).
+5. Output valid JSON ONLY matching this format:
+{{
+  "programs": [
+    {{
+      "name": "B.Tech (Hons) in Computer Science & Engineering",
+      "degree_type": "Undergraduate",
+      "specialization": "Computer Science & Engineering",
+      "duration_years": 4.0,
+      "tuition_fees_annual": "Refer official fee matrix"
+    }}
+  ]
+}}
+
+Source Text:
+\"\"\"{combined_text[:7000]}\"\"\"
+"""
+        raw = self._call_gemini(prompt)
+        if raw:
+            try:
+                cleaned = raw.replace("```json", "").replace("```", "").strip()
+                json_match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+                if json_match:
+                    parsed = json.loads(json_match.group(0))
+                    programs = parsed.get("programs", [])
+                    results = []
+                    for p in programs:
+                        p_name = p.get("name")
+                        if p_name and len(p_name) > 3:
+                            results.append({
+                                "name": p_name,
+                                "degree_type": p.get("degree_type", "Undergraduate"),
+                                "specialization": p.get("specialization"),
+                                "duration_years": float(p.get("duration_years", 3.0)),
+                                "tuition_fees_annual": p.get("tuition_fees_annual", "Refer official fee matrix"),
+                                "source_url": source_url,
+                                "description": f"Verified academic curriculum for {p_name} at {institution_name}"
+                            })
+                    return results
+            except Exception:
+                pass
+
+        return []

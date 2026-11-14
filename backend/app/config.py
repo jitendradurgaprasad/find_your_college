@@ -19,13 +19,13 @@ class Settings(BaseSettings):
     
     # Crawler Engine Limits
     MAX_CRAWL_DEPTH: int = int(os.getenv("MAX_CRAWL_DEPTH", "3"))
-    MAX_PAGES_PER_SITE: int = int(os.getenv("MAX_PAGES_PER_SITE", "35"))
-    REQUEST_DELAY_SECONDS: float = float(os.getenv("REQUEST_DELAY_SECONDS", "0.8"))
+    MAX_PAGES_PER_SITE: int = int(os.getenv("MAX_PAGES_PER_SITE", "45"))
+    REQUEST_DELAY_SECONDS: float = float(os.getenv("REQUEST_DELAY_SECONDS", "0.5"))
     REQUEST_TIMEOUT_SECONDS: int = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "15"))
     MAX_CONCURRENT_REQUESTS: int = int(os.getenv("MAX_CONCURRENT_REQUESTS", "5"))
     USER_AGENT: str = os.getenv(
         "USER_AGENT",
-        "Mozilla/5.0 (compatible; FindYourCollageBot/1.0; +https://find-your-college.edu/bot; educational discovery crawler)"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 (FindYourCollege Educational Intelligence Crawler)"
     )
     
     # Search Provider

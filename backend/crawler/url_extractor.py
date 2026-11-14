@@ -98,6 +98,73 @@ class URLExtractor:
             return ""
 
     @staticmethod
+    def is_safe_public_path(url: str) -> bool:
+        """
+        Ensures the crawler accesses public academic and informational pages while
+        strictly skipping private, backend, login, or administrative endpoints.
+        """
+        clean = url.lower()
+        blocked_subpaths = [
+            "/wp-admin", "/wp-login", "/cgi-bin", "/admin/", "/administrator/",
+            "/cpanel", "/webmail", "/cart", "/checkout", "/session", "/install",
+            "/update.php", "/xmlrpc.php", "/login", "/signin", "/auth/",
+            "/user/login", "/member/login", "/student-login", "/staff-login"
+        ]
+        return not any(bp in clean for bp in blocked_subpaths)
+
+    @staticmethod
+    def score_academic_url(url: str, anchor_text: str = "") -> int:
+        """
+        Computes an academic priority score for link prioritization in the crawler engine.
+        Ensures high-yield course, admission, fee, faculty, and degree pages are crawled first.
+        """
+        score = 0
+        combined = f"{url.lower()} {anchor_text.lower()}"
+
+        # Tier 1: Highest Priority Academic Core (+90 to +120)
+        core_patterns = [
+            ("academic-program", 130), ("ug_pg", 130), ("btech", 125), ("mtech", 120),
+            ("shms", 120), ("soet", 120), ("course", 110), ("program", 110),
+            ("academic", 100), ("admission-procedure", 115), ("admission-process", 115),
+            ("admission", 100), ("fee-structure", 115), ("fee", 95), ("tuition", 95),
+            ("prospectus", 105), ("placement", 105), ("career", 90),
+            ("scholarship", 100), ("faculty-staff", 100), ("faculty_directory", 100),
+            ("faculty", 90), ("bca", 95), ("mca", 95), ("mba", 100), ("bba", 90),
+            ("b.sc", 90), ("m.sc", 90), ("phd", 95), ("ph.d", 95), ("doctoral", 95),
+            ("allied", 100), ("health", 90), ("nursing", 95), ("pharmacy", 95),
+            ("medical", 95), ("physiotherapy", 95), ("bpt", 95), ("mpt", 95),
+            ("department", 85), ("curriculum", 90), ("syllabus", 85), ("school", 80),
+            ("degree", 85), ("eligibility", 90), ("intake", 90), ("seat", 85)
+        ]
+        for kw, pts in core_patterns:
+            if kw in combined:
+                score += pts
+
+        # Tier 2: Campus, Facilities & General Context (+20 to +40)
+        medium_patterns = [
+            ("campus", 30), ("facility", 30), ("facilities", 30), ("hostel", 30),
+            ("library", 35), ("research", 40), ("laboratory", 30),
+            ("accreditation", 25), ("ranking", 25), ("about", 15), ("overview", 15)
+        ]
+        for kw, pts in medium_patterns:
+            if kw in combined:
+                score += pts
+
+        # Tier 3: Deprioritized / Non-Academic Administration (-30 to -80)
+        deprioritized_patterns = [
+            ("president", -60), ("chancellor", -60), ("vice_chancellor", -60),
+            ("governing", -50), ("committee", -50), ("statute", -60), ("act-statutes", -70),
+            ("sedg", -50), ("rti", -60), ("tender", -70), ("gallery", -50),
+            ("photo", -40), ("video", -40), ("alumni", -40), ("newsletter", -40),
+            ("login", -90), ("signin", -90), ("portal", -70), ("auth", -90)
+        ]
+        for kw, pts in deprioritized_patterns:
+            if kw in combined:
+                score += pts
+
+        return score
+
+    @staticmethod
     def is_same_or_subdomain(url: str, base_domain: str) -> bool:
         """
         Checks if url belongs to the same domain or subdomains of base_domain.

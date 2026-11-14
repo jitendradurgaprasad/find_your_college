@@ -46,7 +46,7 @@ class HTMLParser:
         for ul in soup.find_all(["ul", "ol"]):
             items = [li.get_text(strip=True) for li in ul.find_all("li") if li.get_text(strip=True)]
             if len(items) >= 2:
-                lists.append(items[:15]) # limit per list to keep structured
+                lists.append(items[:100]) # ample capacity for full departmental & degree lists
 
         # 6. Tables
         tables: List[Dict[str, Any]] = []
@@ -58,7 +58,7 @@ class HTMLParser:
                 if cells:
                     rows.append(cells)
             if rows:
-                tables.append({"headers": headers, "rows": rows[:50]})
+                tables.append({"headers": headers, "rows": rows[:100]})
 
         # 7. Links: Internal, External, and PDF
         internal_links: List[str] = []

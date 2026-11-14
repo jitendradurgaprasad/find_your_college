@@ -30,7 +30,7 @@ def start_crawl(payload: CrawlStartRequest):
     job_id = manager.start_crawl_job(
         seed_url=norm_url,
         max_depth=payload.max_depth or 2,
-        max_pages=payload.max_pages or 25,
+        max_pages=payload.max_pages or 40,
         university_name=payload.university_name
     )
 

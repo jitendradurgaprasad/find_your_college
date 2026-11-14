@@ -1,3 +1,4 @@
+import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, desc, func
@@ -424,7 +425,25 @@ def get_university_profile(univ_id: str, db: Session = Depends(get_db)):
         ) for r in records
     ]
 
-    latest_adm = admissions[0] if admissions else None
+    # Deduplicate admissions so UI renders clean, distinct admission announcements
+    seen_adm_keys = set()
+    unique_admissions = []
+    for a in admissions:
+        adm_key = (a.academic_year, a.admission_status, a.title, a.entrance_exams or "")
+        if adm_key not in seen_adm_keys:
+            seen_adm_keys.add(adm_key)
+            unique_admissions.append(a)
+
+    # Deduplicate programs
+    seen_prog_keys = set()
+    unique_programs = []
+    for p in programs:
+        prog_key = (re.sub(r"[^a-zA-Z0-9]", "", p.name.lower()), (p.degree_type or "").lower().strip())
+        if prog_key not in seen_prog_keys:
+            seen_prog_keys.add(prog_key)
+            unique_programs.append(p)
+
+    latest_adm = unique_admissions[0] if unique_admissions else None
     adm_status = latest_adm.admission_status if latest_adm else "UNKNOWN"
 
     return UniversityProfile(
@@ -448,11 +467,11 @@ def get_university_profile(univ_id: str, db: Session = Depends(get_db)):
         last_scanned_at=u.last_scanned_at,
         admission_status=adm_status,
         has_scholarships=len(scholarships) > 0,
-        programs_count=len(programs),
+        programs_count=len(unique_programs),
         faculty_count=len(faculty),
         created_at=u.created_at,
-        admissions=[AdmissionSchema.from_orm(a) for a in admissions],
-        programs=[ProgramSchema.from_orm(p) for p in programs],
+        admissions=[AdmissionSchema.from_orm(a) for a in unique_admissions],
+        programs=[ProgramSchema.from_orm(p) for p in unique_programs],
         scholarships=[ScholarshipSchema.from_orm(s) for s in scholarships],
         faculty=[FacultySchema.from_orm(f) for f in faculty],
         placements=[PlacementSchema.from_orm(pl) for pl in placements],

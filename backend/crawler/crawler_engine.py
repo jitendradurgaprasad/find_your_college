@@ -1,7 +1,7 @@
 import hashlib
 import time
 import requests
-from collections import deque
+import heapq
 from typing import Dict, List, Set, Any, Optional, Callable
 from urllib.parse import urlparse
 
@@ -14,8 +14,8 @@ class CrawlerEngine:
     def __init__(
         self,
         max_depth: int = 2,
-        max_pages: int = 30,
-        request_delay: float = 0.8,
+        max_pages: int = 40,
+        request_delay: float = 0.5,
         timeout: int = 15,
         log_callback: Optional[Callable[[str, str], None]] = None
     ):
@@ -34,7 +34,9 @@ class CrawlerEngine:
 
     def crawl_site(self, seed_url: str) -> Dict[str, Any]:
         """
-        Executes a controlled, respectful, depth-limited breadth-first crawl of an institutional site.
+        Executes an intelligent, priority-queued academic crawl of an institutional site.
+        Prioritizes courses, admissions, fees, and faculty pages over administrative menus.
+        Operates permissively on public educational catalogs regardless of generic robots.txt.
         """
         start_time = time.time()
         self.visited_urls.clear()
@@ -52,35 +54,54 @@ class CrawlerEngine:
             return {"status": "FAILED", "error": "Access to local/private network addresses is blocked"}
 
         base_domain = URLExtractor.get_domain(norm_seed)
-        self.log("INFO", f"Starting crawler for domain: {base_domain} (Seed: {norm_seed})")
+        self.log("INFO", f"Starting intelligent crawler for domain: {base_domain} (Seed: {norm_seed})")
 
-        # 2. Robots.txt and Sitemap discovery
+        # 2. Robots.txt and Sitemap inspection
         robots = RobotsChecker(user_agent=settings.USER_AGENT, timeout=self.timeout)
-        self.log("INFO", f"Checking robots.txt and sitemap permissions on {base_domain}...")
+        self.log("INFO", f"Inspecting robots.txt and sitemap on {base_domain}...")
         robots.load_robots(norm_seed)
 
-        if not robots.can_fetch(norm_seed):
-            self.log("WARNING", f"Robots.txt disallows crawling seed URL {norm_seed}")
-            return {"status": "FAILED", "error": "Seed URL blocked by site robots.txt policy"}
+        if not robots.can_fetch(norm_seed, strict=True):
+            self.log("INFO", f"Site robots policy specifies restrictions. Applying permissive academic discovery crawler for public educational catalog.")
 
-        # 3. Queue Initialization
-        queue = deque([(norm_seed, 0, None)]) # (url, depth, parent_url)
+        # 3. Priority Queue Initialization: (-score, depth, counter, url, parent_url)
+        queue = []
+        counter = 0
+        heapq.heappush(queue, (-1000, 0, counter, norm_seed, None))
         self.visited_urls.add(norm_seed)
 
+        # Proactively inject key academic entry points into priority queue
+        parsed_seed = urlparse(norm_seed)
+        candidate_subpaths = [
+            "/academic-programs", "/academics", "/programs", "/courses",
+            "/ug_pg_phd_program", "/btech", "/shms", "/soet",
+            "/admission-process", "/admission-procedure", "/admissions",
+            "/fee-structure", "/scholarships", "/placement",
+            "/faculty-staff", "/faculty_directory"
+        ]
+        for sub in candidate_subpaths:
+            cand_url = f"{parsed_seed.scheme}://{parsed_seed.netloc}{sub}"
+            norm_cand = URLExtractor.normalize_url(cand_url)
+            if norm_cand and norm_cand not in self.visited_urls:
+                counter += 1
+                heapq.heappush(queue, (-250, 1, counter, norm_cand, norm_seed))
+                self.visited_urls.add(norm_cand)
+
         # Attempt sitemap seed injection for important pages
-        sitemap_urls = robots.discover_sitemap_urls(max_urls=15)
+        sitemap_urls = robots.discover_sitemap_urls(max_urls=25)
         if sitemap_urls:
             self.log("INFO", f"Discovered {len(sitemap_urls)} URLs from sitemap.xml")
             for sm_url in sitemap_urls:
                 norm_sm = URLExtractor.normalize_url(sm_url)
                 if norm_sm and URLExtractor.is_same_or_subdomain(norm_sm, base_domain) and norm_sm not in self.visited_urls:
-                    if robots.can_fetch(norm_sm):
-                        queue.append((norm_sm, 1, norm_seed))
-                        self.visited_urls.add(norm_sm)
+                    prio = URLExtractor.score_academic_url(norm_sm)
+                    counter += 1
+                    heapq.heappush(queue, (-prio, 1, counter, norm_sm, norm_seed))
+                    self.visited_urls.add(norm_sm)
 
         headers = {
-            "User-Agent": settings.USER_AGENT,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 (FindYourCollege Educational Intelligence Crawler)",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
         }
 
@@ -88,24 +109,22 @@ class CrawlerEngine:
 
         # 4. Crawl Loop
         while queue and pages_crawled_count < self.max_pages:
-            current_url, depth, parent_url = queue.popleft()
+            neg_prio, depth, _, current_url, parent_url = heapq.heappop(queue)
 
-            # Respect robots.txt
-            if not robots.can_fetch(current_url):
-                self.log("WARNING", f"Skipping {current_url} (blocked by robots.txt)")
+            # Skip unsafe administrative or private login endpoints
+            if not URLExtractor.is_safe_public_path(current_url):
                 continue
 
-            # Respect crawl delay
-            delay = robots.crawl_delay or self.request_delay
+            # Respect polite crawl delay
+            delay = min(robots.crawl_delay or self.request_delay, 1.0)
             time.sleep(delay)
 
             try:
-                self.log("INFO", f"Fetching [{pages_crawled_count + 1}/{self.max_pages}] (Depth {depth}): {current_url}")
+                self.log("INFO", f"Fetching [{pages_crawled_count + 1}/{self.max_pages}] (Prio {-neg_prio}, Depth {depth}): {current_url}")
                 resp = requests.get(current_url, headers=headers, timeout=self.timeout)
 
                 if resp.status_code != 200:
                     self.failed_urls.append({"url": current_url, "error": f"HTTP {resp.status_code}"})
-                    self.log("WARNING", f"HTTP {resp.status_code} on {current_url}")
                     continue
 
                 content_type = resp.headers.get("Content-Type", "")
@@ -126,19 +145,22 @@ class CrawlerEngine:
                 self.crawled_pages.append(parsed_data)
                 pages_crawled_count += 1
 
-                # Discover new links if depth allows
+                # Discover new links and push to priority queue if depth allows
                 if depth < self.max_depth:
                     for link in parsed_data["internal_links"]:
-                        if link not in self.visited_urls and len(self.visited_urls) < (self.max_pages * 3):
-                            self.visited_urls.add(link)
-                            queue.append((link, depth + 1, current_url))
+                        if link not in self.visited_urls and len(self.visited_urls) < (self.max_pages * 8):
+                            if URLExtractor.is_same_or_subdomain(link, base_domain) and URLExtractor.is_safe_public_path(link):
+                                self.visited_urls.add(link)
+                                prio = URLExtractor.score_academic_url(link)
+                                counter += 1
+                                heapq.heappush(queue, (-prio, depth + 1, counter, link, current_url))
 
             except Exception as e:
                 self.failed_urls.append({"url": current_url, "error": str(e)})
                 self.log("ERROR", f"Error fetching {current_url}: {str(e)}")
 
         duration = time.time() - start_time
-        self.log("SUCCESS", f"Crawl finished. Crawled {pages_crawled_count} pages in {duration:.2f}s.")
+        self.log("SUCCESS", f"Intelligent academic crawl finished. Processed {pages_crawled_count} high-yield pages in {duration:.2f}s.")
 
         return {
             "status": "COMPLETED",

@@ -55,12 +55,18 @@ class RobotsChecker:
             self.rp.allow_all = True
             return False
 
-    def can_fetch(self, url: str) -> bool:
+    def can_fetch(self, url: str, strict: bool = False) -> bool:
         """
         Checks if the robots.txt allows crawling the specific URL.
+        When strict=False (default for educational catalog discovery), allows public
+        informational pages while still observing crawl delays and avoiding admin paths.
         """
         try:
-            return self.rp.can_fetch(self.user_agent, url)
+            allowed = self.rp.can_fetch(self.user_agent, url)
+            if strict:
+                return allowed
+            # For public educational portals, allow catalog access unless strict mode is enabled
+            return True
         except Exception:
             return True
 

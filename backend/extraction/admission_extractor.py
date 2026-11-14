@@ -1,21 +1,25 @@
 import re
 from typing import Dict, List, Any, Optional
-from datetime import datetime, date
+from datetime import datetime
 
 class AdmissionExtractor:
     @staticmethod
     def extract_admissions(page: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Extracts verified admission announcements, application periods, and statuses.
+        Extracts verified admission announcements, application periods, entrance exams,
+        and statuses. Strictly ignores pages that only contain generic banner slogans.
         """
         text = page.get("cleaned_text", "")
-        url = page.get("url", "")
-        title = page.get("title", "")
-        tables = page.get("tables", [])
+        url = page.get("url", "").lower()
+        title = page.get("title", "").lower()
 
-        # Academic year detection (e.g., 2025-26, 2025-2026, 2024-2025)
+        # Is this an admission-relevant page?
+        is_admission_page = any(k in url for k in ["admission", "apply", "counselling", "intake", "eligibility", "prospectus"]) or \
+                            any(k in title for k in ["admission", "apply", "eligibility", "counselling"])
+
+        # Academic year detection (e.g., 2026-2027, 2025-26, 2025-2026)
         current_year = datetime.now().year
-        year_match = re.search(r"\b(202[3-7])\s*[-/–]\s*(202[4-8]|[2-3][0-9])\b", text)
+        year_match = re.search(r"\b(202[3-8])\s*[-/–]\s*(202[4-9]|[2-3][0-9])\b", text)
         if year_match:
             academic_year = f"{year_match.group(1)}-{year_match.group(2)}"
         else:
@@ -25,7 +29,6 @@ class AdmissionExtractor:
         status = "UNKNOWN"
         evidence = ""
 
-        # Check explicit status patterns
         open_pattern = re.search(r"(admissions?\s+(?:are\s+)?open|apply\s+online\s+for\s+admission|applications?\s+invited\s+for|admissions?\s+open\s+for\s+academic\s+session)", text, re.I)
         closed_pattern = re.search(r"(admissions?\s+(?:are\s+)?closed|last\s+date\s+has\s+passed|admissions?\s+concluded|application\s+window\s+is\s+closed)", text, re.I)
         upcoming_pattern = re.search(r"(admissions?\s+will\s+commence|applications?\s+will\s+open\s+from|upcoming\s+admission\s+cycle)", text, re.I)
@@ -43,41 +46,54 @@ class AdmissionExtractor:
         elif ongoing_pattern:
             status = "ONGOING"
             evidence = ongoing_pattern.group(0)
-        else:
-            status = "UNKNOWN"
-            evidence = "No explicit admission status statement identified."
 
-        # Dates extraction
-        opening_date = None
-        closing_date = None
-
-        date_matches = re.findall(r"(?:last\s+date|deadline|opening\s+date|closing\s+date)[\s:]+([0-9]{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s+202[4-7]|[0-9]{1,2}[-/][0-9]{1,2}[-/]202[4-7])", text, re.I)
-        if date_matches:
-            evidence += f" | Deadline identified: {date_matches[0]}"
-
-        # Entrance exams
+        # Entrance exams identification
         exams = []
-        exam_keywords = ["JEE Main", "JEE Advanced", "GATE", "CAT", "MAT", "NEET", "CUET", "CLAT", "BITSAT", "State CET"]
+        exam_keywords = [
+            "JEE Main", "JEE Advanced", "GATE", "CAT", "MAT", "NEET", "NEET-UG", "NEET-PG",
+            "CUET", "CLAT", "BITSAT", "State CET", "EAPCET", "TS EAMCET", "AP EAMCET", "NATA"
+        ]
         for ex in exam_keywords:
             if re.search(r"\b" + re.escape(ex) + r"\b", text, re.I):
                 exams.append(ex)
+
+        # Dates / Deadline extraction
+        deadline = None
+        date_matches = re.findall(r"(?:last\s+date|deadline|opening\s+date|closing\s+date)[\s:]+([0-9]{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s+202[4-8]|[0-9]{1,2}[-/][0-9]{1,2}[-/]202[4-8])", text, re.I)
+        if date_matches:
+            deadline = date_matches[0]
+            evidence += f" | Deadline: {deadline}"
 
         # Application fee
         fee_match = re.search(r"(?:application\s+fee|registration\s+fee)[\s:]+(?:INR|Rs\.?|₹)?\s*([0-9]+(?:\.[0-9]{2})?)", text, re.I)
         app_fee = f"₹{fee_match.group(1)}" if fee_match else None
 
-        # Build Admission Record
-        records = [{
+        # Qualification check:
+        # If this is NOT an admission page and has no specific deadline, exams, or fee,
+        # DO NOT produce a duplicate trivial record.
+        has_substantive_admission_info = bool(deadline or exams or app_fee or is_admission_page)
+        if not has_substantive_admission_info and status == "UNKNOWN":
+            return []
+
+        # Determine title
+        if "phd" in url or "ph.d" in title:
+            title_text = f"Ph.D. Admissions {academic_year}"
+        elif "pg" in url or "postgraduate" in title:
+            title_text = f"Postgraduate Admissions {academic_year}"
+        elif "ug" in url or "undergraduate" in title:
+            title_text = f"Undergraduate Admissions {academic_year}"
+        else:
+            title_text = f"Admissions {academic_year} Announcement"
+
+        return [{
             "academic_year": academic_year,
             "admission_status": status,
-            "title": f"Admissions {academic_year} Announcement",
-            "description": f"Admission cycle details for {academic_year} extracted from {url}",
-            "entrance_exams": ", ".join(exams) if exams else "Institution Entrance / Merit-based",
+            "title": title_text,
+            "description": f"Admission cycle details for {academic_year}. Status: {status}. Source: {page.get('url')}",
+            "entrance_exams": ", ".join(exams) if exams else "Merit-based / University Entrance Exam",
             "application_fee": app_fee,
-            "source_url": url,
-            "source_evidence": evidence,
-            "confidence_score": 0.90 if status != "UNKNOWN" else 0.50,
-            "verification_status": "VERIFIED" if status != "UNKNOWN" else "NEEDS_REVIEW"
+            "source_url": page.get("url", ""),
+            "source_evidence": evidence or f"Extracted from {page.get('url')}",
+            "confidence_score": 0.92 if has_substantive_admission_info else 0.70,
+            "verification_status": "VERIFIED" if (status != "UNKNOWN" and has_substantive_admission_info) else "NEEDS_REVIEW"
         }]
-
-        return records
